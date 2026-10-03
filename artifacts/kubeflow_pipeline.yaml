@@ -1,0 +1,428 @@
+# PIPELINE DEFINITION
+# Name: wine-quality-end-to-end-mlops-pipeline
+# Description: 5-Stage Kubeflow Pipeline: Data Collection, Validation, Training, Evaluation, and Deployment
+# Inputs:
+#    accuracy_threshold: float [Default: 0.75]
+#    max_depth: int [Default: 10.0]
+#    n_estimators: int [Default: 150.0]
+components:
+  comp-data-collection-op:
+    executorLabel: exec-data-collection-op
+    outputDefinitions:
+      artifacts:
+        dataset_output:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-data-validation-op:
+    executorLabel: exec-data-validation-op
+    inputDefinitions:
+      artifacts:
+        dataset_input:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        validation_status:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+      parameters:
+        Output:
+          parameterType: BOOLEAN
+  comp-deployment-op:
+    executorLabel: exec-deployment-op
+    inputDefinitions:
+      artifacts:
+        model_input:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        deploy_approval:
+          parameterType: BOOLEAN
+    outputDefinitions:
+      artifacts:
+        deployment_record:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-evaluation-op:
+    executorLabel: exec-evaluation-op
+    inputDefinitions:
+      artifacts:
+        dataset_input:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        model_input:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        accuracy_threshold:
+          defaultValue: 0.75
+          isOptional: true
+          parameterType: NUMBER_DOUBLE
+    outputDefinitions:
+      artifacts:
+        eval_metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+      parameters:
+        Output:
+          parameterType: BOOLEAN
+  comp-training-op:
+    executorLabel: exec-training-op
+    inputDefinitions:
+      artifacts:
+        dataset_input:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        max_depth:
+          defaultValue: 10.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        n_estimators:
+          defaultValue: 150.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        model_output:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        train_metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-data-collection-op:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_collection_op
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.2'\
+          \ 'scikit-learn==1.5.0'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_collection_op(dataset_output: dsl.Output[dsl.Dataset]):\n\
+          \    \"\"\"Stage 1: Data Collection Component\"\"\"\n    from sklearn.datasets\
+          \ import fetch_openml\n    import pandas as pd\n\n    print(\"Collecting\
+          \ Wine Quality dataset from OpenML repository...\")\n    wine = fetch_openml(\"\
+          wine-quality-red\", version=1, as_frame=True, parser=\"auto\")\n    df =\
+          \ wine.frame\n    target_series = pd.to_numeric(df[\"class\"], errors=\"\
+          coerce\")\n    df[\"target\"] = (target_series >= 6).astype(int)\n    df.drop(columns=[\"\
+          class\"], inplace=True)\n\n    df.to_csv(dataset_output.path, index=False)\n\
+          \    print(f\"Data Collection complete: {df.shape[0]} rows saved to {dataset_output.path}\"\
+          )\n\n"
+        image: python:3.11-slim
+    exec-data-validation-op:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_validation_op
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.2'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_validation_op(\n    dataset_input: dsl.Input[dsl.Dataset],\n\
+          \    validation_status: dsl.Output[dsl.Artifact]\n) -> bool:\n    \"\"\"\
+          Stage 2: Data Validation Component\"\"\"\n    import pandas as pd\n\n  \
+          \  df = pd.read_csv(dataset_input.path)\n    print(f\"Validating dataset\
+          \ schema and statistics for {df.shape[0]} rows...\")\n\n    # Validation\
+          \ rules\n    assert df.shape[0] >= 1000, f\"Validation Failed: Expected\
+          \ >=1000 rows, found {df.shape[0]}\"\n    assert df.isna().sum().sum() ==\
+          \ 0, \"Validation Failed: Found unexpected missing values!\"\n    assert\
+          \ \"target\" in df.columns, \"Validation Failed: 'target' column missing!\"\
+          \n\n    with open(validation_status.path, \"w\") as f:\n        f.write(\"\
+          VALIDATION_PASSED: Schema valid, 0 nulls, correct target distribution.\"\
+          )\n    print(\"Data validation successfully passed all data quality gates.\"\
+          )\n    return True\n\n"
+        image: python:3.11-slim
+    exec-deployment-op:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - deployment_op
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef deployment_op(\n    model_input: dsl.Input[dsl.Model],\n    deploy_approval:\
+          \ bool,\n    deployment_record: dsl.Output[dsl.Artifact]\n):\n    \"\"\"\
+          Stage 5: Deployment Component (Simulates blue-green rollout / staging registration)\"\
+          \"\"\n    if not deploy_approval:\n        print(\"Deployment Aborted: Model\
+          \ failed evaluation quality gate threshold.\")\n        with open(deployment_record.path,\
+          \ \"w\") as f:\n            f.write(\"DEPLOYMENT_REJECTED: Quality threshold\
+          \ not satisfied.\")\n        return\n\n    print(f\"Deploying model from\
+          \ {model_input.path} to inference service...\")\n    status_msg = (\n  \
+          \      \"DEPLOYMENT_SUCCESSFUL\\n\"\n        \"Endpoint: http://mlops-wine-service.prod.svc.cluster.local/predict\\\
+          n\"\n        \"Strategy: Canary Rollout (10% initial traffic)\\n\"\n   \
+          \     \"Monitoring: Drift Detection & Prometheus Latency Metrics Enabled\"\
+          \n    )\n    with open(deployment_record.path, \"w\") as f:\n        f.write(status_msg)\n\
+          \    print(\"Deployment completed successfully!\")\n\n"
+        image: python:3.11-slim
+    exec-evaluation-op:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluation_op
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.2'\
+          \ 'scikit-learn==1.5.0' 'joblib==1.4.2'  &&  python3 -m pip install --quiet\
+          \ --no-warn-script-location 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5;\
+          \ python_version<\"3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluation_op(\n    dataset_input: dsl.Input[dsl.Dataset],\n\
+          \    model_input: dsl.Input[dsl.Model],\n    eval_metrics: dsl.Output[dsl.Metrics],\n\
+          \    accuracy_threshold: float = 0.75\n) -> bool:\n    \"\"\"Stage 4: Model\
+          \ Evaluation & Gating Component\"\"\"\n    import pandas as pd\n    import\
+          \ joblib\n    from sklearn.metrics import accuracy_score, precision_score,\
+          \ recall_score, f1_score, roc_auc_score\n    from sklearn.model_selection\
+          \ import train_test_split\n\n    df = pd.read_csv(dataset_input.path)\n\
+          \    X = df.drop(columns=[\"target\"])\n    y = df[\"target\"]\n\n    _,\
+          \ X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42,\
+          \ stratify=y)\n\n    model = joblib.load(model_input.path)\n    preds =\
+          \ model.predict(X_test)\n    probs = model.predict_proba(X_test)[:, 1]\n\
+          \n    acc = accuracy_score(y_test, preds)\n    prec = precision_score(y_test,\
+          \ preds, zero_division=0)\n    rec = recall_score(y_test, preds, zero_division=0)\n\
+          \    f1 = f1_score(y_test, preds, zero_division=0)\n    auc = roc_auc_score(y_test,\
+          \ probs)\n\n    eval_metrics.log_metric(\"test_accuracy\", float(acc))\n\
+          \    eval_metrics.log_metric(\"precision\", float(prec))\n    eval_metrics.log_metric(\"\
+          recall\", float(rec))\n    eval_metrics.log_metric(\"f1_score\", float(f1))\n\
+          \    eval_metrics.log_metric(\"roc_auc\", float(auc))\n\n    deployable\
+          \ = acc >= accuracy_threshold\n    print(f\"Evaluation Metrics: Accuracy={acc:.4f},\
+          \ F1={f1:.4f}, AUC={auc:.4f}\")\n    print(f\"Quality Gate Status: {'PASSED'\
+          \ if deployable else 'FAILED'} (Threshold: {accuracy_threshold})\")\n  \
+          \  return deployable\n\n"
+        image: python:3.11-slim
+    exec-training-op:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - training_op
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.2'\
+          \ 'scikit-learn==1.5.0' 'joblib==1.4.2'  &&  python3 -m pip install --quiet\
+          \ --no-warn-script-location 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5;\
+          \ python_version<\"3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef training_op(\n    dataset_input: dsl.Input[dsl.Dataset],\n  \
+          \  model_output: dsl.Output[dsl.Model],\n    train_metrics: dsl.Output[dsl.Metrics],\n\
+          \    n_estimators: int = 150,\n    max_depth: int = 10\n):\n    \"\"\"Stage\
+          \ 3: Model Training Component\"\"\"\n    import pandas as pd\n    import\
+          \ joblib\n    from sklearn.ensemble import RandomForestClassifier\n    from\
+          \ sklearn.model_selection import train_test_split\n\n    df = pd.read_csv(dataset_input.path)\n\
+          \    X = df.drop(columns=[\"target\"])\n    y = df[\"target\"]\n\n    X_train,\
+          \ _, y_train, _ = train_test_split(X, y, test_size=0.2, random_state=42,\
+          \ stratify=y)\n\n    model = RandomForestClassifier(n_estimators=n_estimators,\
+          \ max_depth=max_depth, random_state=42)\n    model.fit(X_train, y_train)\n\
+          \n    train_acc = model.score(X_train, y_train)\n    train_metrics.log_metric(\"\
+          train_accuracy\", float(train_acc))\n    train_metrics.log_metric(\"n_estimators\"\
+          , int(n_estimators))\n    train_metrics.log_metric(\"max_depth\", int(max_depth))\n\
+          \n    joblib.dump(model, model_output.path)\n    print(f\"Training complete.\
+          \ Model serialized to {model_output.path} with Train Acc: {train_acc:.4f}\"\
+          )\n\n"
+        image: python:3.11-slim
+pipelineInfo:
+  description: '5-Stage Kubeflow Pipeline: Data Collection, Validation, Training,
+    Evaluation, and Deployment'
+  name: wine-quality-end-to-end-mlops-pipeline
+root:
+  dag:
+    tasks:
+      data-collection-op:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-data-collection-op
+        taskInfo:
+          name: data-collection-op
+      data-validation-op:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-data-validation-op
+        dependentTasks:
+        - data-collection-op
+        inputs:
+          artifacts:
+            dataset_input:
+              taskOutputArtifact:
+                outputArtifactKey: dataset_output
+                producerTask: data-collection-op
+        taskInfo:
+          name: data-validation-op
+      deployment-op:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-deployment-op
+        dependentTasks:
+        - evaluation-op
+        - training-op
+        inputs:
+          artifacts:
+            model_input:
+              taskOutputArtifact:
+                outputArtifactKey: model_output
+                producerTask: training-op
+          parameters:
+            deploy_approval:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: evaluation-op
+        taskInfo:
+          name: deployment-op
+      evaluation-op:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluation-op
+        dependentTasks:
+        - data-collection-op
+        - training-op
+        inputs:
+          artifacts:
+            dataset_input:
+              taskOutputArtifact:
+                outputArtifactKey: dataset_output
+                producerTask: data-collection-op
+            model_input:
+              taskOutputArtifact:
+                outputArtifactKey: model_output
+                producerTask: training-op
+          parameters:
+            accuracy_threshold:
+              componentInputParameter: accuracy_threshold
+        taskInfo:
+          name: evaluation-op
+      training-op:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-training-op
+        dependentTasks:
+        - data-collection-op
+        - data-validation-op
+        inputs:
+          artifacts:
+            dataset_input:
+              taskOutputArtifact:
+                outputArtifactKey: dataset_output
+                producerTask: data-collection-op
+          parameters:
+            max_depth:
+              componentInputParameter: max_depth
+            n_estimators:
+              componentInputParameter: n_estimators
+        taskInfo:
+          name: training-op
+  inputDefinitions:
+    parameters:
+      accuracy_threshold:
+        defaultValue: 0.75
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      max_depth:
+        defaultValue: 10.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      n_estimators:
+        defaultValue: 150.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.17.0

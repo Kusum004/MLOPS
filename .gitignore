@@ -17,7 +17,10 @@ data/dataset_v1_raw.csv
 # SQLite DBs and Feast local registries
 *.db
 .feast/
-feature_store/data/
+feature_store/data/*.db
+
+# MLflow local runs directory (metrics & plots are saved in artifacts/)
+mlruns/
 
 # IDE
 .idea/

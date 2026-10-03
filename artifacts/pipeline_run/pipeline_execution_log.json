@@ -1,0 +1,61 @@
+{
+    "pipeline_name": "wine-quality-end-to-end-mlops-pipeline",
+    "timestamp": "2026-10-03 23:41:44",
+    "stages": {
+        "1_data_collection": {
+            "status": "SUCCESS",
+            "samples_collected": 1599,
+            "total_columns": 15,
+            "features": [
+                "fixed_acidity",
+                "volatile_acidity",
+                "citric_acid",
+                "residual_sugar",
+                "chlorides",
+                "free_sulfur_dioxide",
+                "total_sulfur_dioxide",
+                "density",
+                "pH",
+                "sulphates",
+                "alcohol",
+                "bound_sulfur_dioxide",
+                "acidity_ratio",
+                "sulphate_to_chloride_ratio"
+            ]
+        },
+        "2_data_validation": {
+            "status": "PASSED",
+            "missing_values": 0,
+            "target_column_present": true,
+            "sufficient_rows": true
+        },
+        "3_training": {
+            "status": "SUCCESS",
+            "model_type": "RandomForestClassifier",
+            "hyperparameters": {
+                "n_estimators": 150,
+                "max_depth": 10
+            },
+            "train_accuracy": 0.9851,
+            "model_artifact": "artifacts/pipeline_run\\deployed_model.joblib"
+        },
+        "4_evaluation": {
+            "status": "PASSED",
+            "metrics": {
+                "test_accuracy": 0.7937,
+                "precision": 0.8182,
+                "recall": 0.7895,
+                "f1_score": 0.8036,
+                "roc_auc": 0.8819
+            },
+            "threshold_required": 0.75,
+            "gate_passed": true
+        },
+        "5_deployment": {
+            "status": "DEPLOYED",
+            "endpoint": "http://127.0.0.1:8000/predict",
+            "strategy": "Blue-Green / Staging Promotion",
+            "message": "Model deployed and ready for inference."
+        }
+    }
+}

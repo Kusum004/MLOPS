@@ -1,0 +1,9 @@
+Metric,v1.0 (Original Raw),v2.0 (Modified & Preprocessed)
+Dataset Version,Raw Wine Quality,Engineered & Scaled
+Total Rows (Samples),1599,1599
+Total Columns,13,15
+Feature Count,12,14
+Missing Values,0,0
+Feature Engineering,None (Raw attributes),"+3 Ratios (bound_SO2, acidity, sulphate/chloride)"
+Feature Scaling,None (Unscaled physical units),"StandardScaler (Zero mean, unit variance)"
+Outlier Treatment,Raw unclipped outliers,1% - 99% Percentile Capping (Winsorized)
